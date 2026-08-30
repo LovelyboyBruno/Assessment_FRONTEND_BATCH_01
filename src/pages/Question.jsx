@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
-
+import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 
 function Question() {
 
     const [showModal, setShowModal] = useState(false);
+    const [searchParams] = useSearchParams();
+    const assessmentId = searchParams.get("assessmentId");
+    const [assessmentTitle, setAssessmentTitle] = useState("");
+
+    const [editingQuestion, setEditingQuestion] = useState(null);
 
     const [formData, setFormData] = useState({
-        assessmentId: "",
+        assessmentId: assessmentId || "",
         questionText: "",
         options: "",
         correctAnswer: "",
@@ -16,16 +21,30 @@ function Question() {
     const [questions, setQuestions] = useState([]);
 
     useEffect(() => {
-        fetchQuestions();
-    }, []);
+        if (assessmentId) {
+            setFormData((prev) => ({
+                ...prev,
+                assessmentId,
+            }));
+        }
+    }, [assessmentId]);
 
     const fetchQuestions = async () => {
        try {
-           const response = await api.get("/questions");
+           const response = assessmentId
+               ? await api.get(`/questions/${assessmentId}`)
+                : await api.get("/questions");
 
            console.log(response.data);
 
-           setQuestions(response.data);
+           setQuestions(response.data.questions || response.data);
+
+           if (assessmentId) {
+            const assessmentResponse = await api.get(
+                `/assessments/${assessmentId}`
+            );
+            setAssessmentTitle(assessmentResponse.data.title);
+           }
 
         } catch (error) {
             console.error(error.response?.data || error.message);
@@ -39,33 +58,133 @@ function Question() {
         });
     };
 
+    const handleEditQuestion = (question) => {
+        console.log("EDIT QUESTION:", question);
+
+        setEditingQuestion(question);
+    
+        setFormData({
+            assessmentId: question.assessmentId?._id || question.assessmentId,
+            questionText: question.questionText,
+            options: Array.isArray(question.options)
+                ? question.options.join(",")
+                : question.options,
+            correctAnswer: question.correctAnswer,
+        });
+
+        setShowModal(true);
+    };
+
+    const handleUpdateQuestion = async () => {
+        try {
+            const payload = {
+                assessmentId: formData.assessmentId,
+                questionText: formData.questionText,
+                options: Array.isArray(formData.options)
+                    ? formData.options
+                    : formData.options
+                        .split(",")
+                        .map((option) => option.trim()),
+                correctAnswer: formData.correctAnswer,
+            };
+
+            const response = await api.put(
+                `/questions/${editingQuestion._id}`,
+                payload
+            );
+
+            console.log("Question updated:", response.data);
+
+            await fetchQuestions();
+
+            setShowModal(false);
+            setEditingQuestion(null);
+
+        }catch (error) {
+            console.error(
+                "UPDATE ERROR",
+                error.response?.data || error.message
+            );
+        }
+    }
+
     const handleCreateQuestion = async () => {
     try {
 
         const payload = {
             assessmentId: formData.assessmentId,
             questionText: formData.questionText,
-            options: formData.options
-                .split(",")
-                .map((option) => option.trim()),
+            options: Array.isArray(formData.options)
+                ? formData.options
+                : formData.options.split(",").map(option => option.trim()),
             correctAnswer: formData.correctAnswer,
         };
 
-        const response = await api.post(
-            "/questions",
-            payload
-        );
+        if (editingQuestion) {
+            // UPDATE exisiting question
+            const response = await api.put(
+                `/questions/${editingQuestion._id}`,
+                payload
+            );
 
-        console.log("Question created:", response.data);
+            console.log("Question updated:", response.data);
+        } else {
+            //CREATE new question
+            const response = await api.post(
+                "/questions",
+                payload
+            );
 
-        fetchQuestions();
+            console.log("Question created:", response.data);
+        }
+
+        await fetchQuestions();
 
         setShowModal(false);
+        setEditingQuestion(null);
+
+        setFormData({
+            assessmentId: "",
+            questionText: "",
+            options: [],
+            correctAnswer: "",
+        });
+
+      } catch (error){
+        console.error(
+            error.response?.data || error.message 
+        );
+      }
+
+    };
+
+    const handleDeleteQuestion = async (questionId) => {
+
+        const confirmed = window.confirm(
+            "Are you sure you want to delete this question?"
+        );
+
+        if (!confirmed) {
+            return;
+        }
         
+    try {
+        console.log("DELETE QUESTION:", questionId);
+
+        await api.delete(`/questions/${questionId}`);
+
+    // Refresh the questions after deletion
+    fetchQuestions();
+
     } catch (error) {
-        console.error(error.response?.data || error.message);
+        console.error(
+            "DELETE ERROR:",
+            error.response?.data || error.message
+        );
     }
 };
+
+       
 
 return (
     <div className="p-8">
@@ -73,7 +192,9 @@ return (
         <div className="flex justify-between items-center mb-8">
 
             <h1 className="text-4xl font-bold text-blue-600">
-                Questions
+                {assessmentTitle
+                    ? `Questions for Assessment: ${assessmentTitle}`
+                    : "Questions"}
             </h1>
 
             <button 
@@ -104,11 +225,29 @@ return (
 
                     <div className="mt-5 flex gap-4">
 
-                        <button className="bg-yellow-500 text-white px-4 py-2 rounded">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                console.log("EDIT BUTTON CLICKED:", question);
+                                handleEditQuestion(question);
+
+                                {questions.length === 0 && assessmentId && (
+                    <div className="bg-white shadow-lg rounded-xl p-8">
+                        <p className="text-gray-600">
+                            No questions have been addedd to this assessment yet.
+                        </p>
+                    </div>
+                )}
+                            }}
+                            className="bg-yellow-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-yellow-600"
+                        > 
                             Edit
                         </button>
 
-                        <button className="bg-red-600 text-white px-4 py-2 rounded">
+                        <button
+                            onClick={() => handleDeleteQuestion(question._id)}
+                             className="bg-red-600 text-white px-4 py-2 rounded"
+                        >
                             Delete
                         </button>
 
@@ -125,17 +264,8 @@ return (
                     <div className="bg-white p-8 rounded-xl w-[500px]">
 
                         <h2 className="text-2xl font-bold mb-6">
-                            Create New Question
+                            {editingQuestion ? "Edit Question" : "Create New Question"}
                         </h2>
-
-                        <input
-                            type="text"
-                            name="assessmentId"
-                            placeholder="Assessment ID"
-                            value={formData.assessmentId}
-                            onChange={handleInputChange}
-                            className="w-full border p-3 rounded mb-4"
-                        />
 
                         <textarea
                             name="questionText"
@@ -173,10 +303,14 @@ return (
                             </button>
 
                             <button
-                                onClick={handleCreateQuestion}
+                                onClick={
+                                    editingQuestion
+                                        ? handleUpdateQuestion
+                                        : handleCreateQuestion
+                                }
                                 className="bg-blue-600 text-white px-4 py-2 rounded"
                             >
-                                Create Question
+                                {editingQuestion ? "Update Question" : "Create Question"}
                             </button>
 
                         </div>

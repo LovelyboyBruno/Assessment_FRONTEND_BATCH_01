@@ -6,6 +6,9 @@ import Dashboard from "../pages/Dashboard";
 import Assessment from "../pages/Assessment";
 import Question from "../pages/Question";
 import Submission from "../pages/Submission";
+import TakeAssessment from "../pages/TakeAssessment";
+import Results from "../pages/Results";
+import StudentAssessments from "../pages/StudentAssessments";
 
 import ProtectedRoute from "../components/ProtectedRoutes";
 import MainLayout from "../layouts/MainLayout";
@@ -27,8 +30,11 @@ function AppRoutes() {
       >
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/assessments" element={<Assessment />} />
+            <Route path="/assessments/:id/take" element={<TakeAssessment />} />
             <Route path="/questions" element={<Question />} />
             <Route path="/submissions" element={<Submission />} />
+            <Route path="/results" element={<Results />} />
+            <Route path="/student/assessments" element={<StudentAssessments />} />
       </Route>
 
     </Routes>

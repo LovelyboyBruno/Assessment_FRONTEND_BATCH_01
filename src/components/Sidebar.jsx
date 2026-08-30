@@ -45,6 +45,13 @@ function Sidebar() {
                     📤 Submissions
                 </NavLink>
 
+                <NavLink
+                    to="/results"
+                    className="block hover:text-yellow-300"
+                >
+                    📊 Results
+                </NavLink>
+
                 <button
                     onClick={handleLogout}
                     className="mt-10 w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg"

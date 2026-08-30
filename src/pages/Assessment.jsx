@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
+import { useNavigate } from "react-router-dom";
 
 function Assessment() {
     const [assessments, setAssessments] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [editingAssessment, setEditingAssessment] = useState(null);
+    const navigate = useNavigate();
     const [formData, setFormData] = useState({
         title: "",
         description: "",
@@ -137,6 +139,24 @@ function Assessment() {
                                  onClick={() => handleDelete(assessment._id)} 
                                  className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">
                                 Delete
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    navigate(`/questions?assessmentId=${assessment._id}`)
+                                }
+                                className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
+                            >
+                                View Questions
+                            </button>
+                            
+                            <button
+                                 type="button"
+                                 onClick={() => navigate(`/assessments/${assessment._id}/take`)}
+                                    className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                            >
+                                Take Assessment
                             </button>
                         </div>
                     </div>
