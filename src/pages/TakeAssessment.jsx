@@ -1,206 +1,512 @@
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import api from "../services/api";
+
 function TakeAssessment() {
     const { id } = useParams();
-const [assessment, setAssessment] = useState(null);
-const [questions, setQuestions] = useState([]);
-const [answers, setAnswers] = useState({});
-const [currentQuestion, setCurrentQuestion] = useState(0);
-const [timeLeft, setTimeLeft] = useState(null);
-const [isSubmitting, setIsSubmitting] = useState(false);
+    const navigate = useNavigate();
 
-useEffect(() => {
-    fetchAssessment();
-    fetchQuestions();
-}, [id]);
-useEffect(() => {
-    if (assessment) {
-        setTimeLeft(assessment.duration * 60);
-    }
-}, [assessment]);
+    const [assessment, setAssessment] = useState(null);
+    const [questions, setQuestions] = useState([]);
+    const [answers, setAnswers] = useState({});
+    const [currentQuestion, setCurrentQuestion] = useState(0);
+    const [timeLeft, setTimeLeft] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState("");
+    const [submitError, setSubmitError] = useState("");
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitted, setSubmitted] = useState(false);
+    const [submissionResult, setSubmissionResult] = useState(null);
 
-useEffect(() => {
-    if (timeLeft === null) return;
+    const submittingRef = useRef(false);
+    const submittedRef = useRef(false);
+    const autoSubmitTriggered = useRef(false);
 
-    if (timeLeft <= 0) {
-        handleSubmitAssessment();
-        return;
-    }
+    useEffect(() => {
+        let cancelled = false;
 
-    const timer = setInterval(() => {
-        setTimeLeft((prevTime) => prevTime - 1);
-    }, 1000);
+        const loadAssessment = async () => {
+            try {
+                setLoading(true);
+                setError("");
 
-    return () => clearInterval(timer);
-}, [timeLeft]);
+                const [assessmentResponse, questionResponse] =
+                    await Promise.all([
+                        api.get("/assessments"),
+                        api.get(`/questions/${id}`),
+                    ]);
 
-const fetchAssessment = async () => {
-    try {
-        const response = await api.get("/assessments");
+                if (cancelled) return;
 
-        const foundAssessment = response.data.assessments.find(
-            (assessment) => assessment._id === id
-        );
+                const assessmentList = Array.isArray(
+                    assessmentResponse.data.assessments
+                )
+                    ? assessmentResponse.data.assessments
+                    : [];
 
-        setAssessment(foundAssessment);
-    } catch (error) {
-        console.error(
-            error.response?.data || error.message
-        );
-    }
-};
+                const foundAssessment = assessmentList.find(
+                    (item) => item._id === id
+                );
 
-const fetchQuestions = async () => {
-    try {
-        const response = await api.get(`/questions/${id}`);
+                if (!foundAssessment) {
+                    throw new Error("Assessment not found.");
+                }
 
-        setQuestions(response.data);
-    } catch (error) {
-        console.error(
-            error.response?.data || error.message
-        );
-    }
-};
+                const questionList = Array.isArray(questionResponse.data)
+                    ? questionResponse.data
+                    : [];
 
-const handleAnswerChange = (questionId, answer) => {
-    setAnswers({
-        ...answers,
-        [questionId]: answer,
-    });
-};
+                setAssessment(foundAssessment);
+                setQuestions(questionList);
 
-if (!assessment) {
-    return <h2 className="p-8">Loading Assessment...</h2>;
-}
+                const duration = Math.max(
+                    0,
+                    Number(foundAssessment.duration) || 0
+                );
 
-const handleSubmitAssessment = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    try {
-        const formattedAnswers = Object.entries(answers).map(
-            ([questionId, answer]) => ({
-                questionId,
-                answer,
-            })
-        );
+                setTimeLeft(duration * 60);
+            } catch (err) {
+                if (!cancelled) {
+                    console.error(
+                        "ASSESSMENT LOAD ERROR:",
+                        err.response?.data || err.message
+                    );
 
-        const response = await api.post("/submissions", {
-            assessmentId: id,
-            answers: formattedAnswers,
-        });
+                    setError(
+                        err.message === "Assessment not found."
+                            ? err.message
+                            : "Unable to load this assessment. Please try again."
+                    );
+                }
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        };
 
-        console.log("Assessment submitted:", response.data);
+        loadAssessment();
 
-        alert(
-            `Assessment submitted successfully! Score: ${response.data.score}`
-        );
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
 
-    } catch (error) {
-        console.error(
-            "SUBMIT ERROR:",
-            error.response?.data || error.message
-        );
-    
-        setIsSubmitting(false);
-    }
-    
-};
+    const handleSubmitAssessment = useCallback(
+        async (automatic = false) => {
+            if (submittingRef.current || submittedRef.current) return;
 
-return (
-    <div className="p-8">
+            submittingRef.current = true;
+            setIsSubmitting(true);
+            setSubmitError("");
 
-        <h1 className="text-4xl font-bold text-blue-600 mb-3">
-            {assessment.title}
-        </h1>
+            try {
+                const formattedAnswers = Object.entries(answers).map(
+                    ([questionId, answer]) => ({
+                        questionId,
+                        answer,
+                    })
+                );
 
-        <p className="text-gray-600 mb-2">
-            {assessment.description}
-        </p>
+                const response = await api.post("/submissions", {
+                    assessmentId: id,
+                    answers: formattedAnswers,
+                });
 
-        <div className="flex items-center justify-between mb-8">
-            <p className="font-semibold">Duration: {assessment.duration} minutes</p>
+                const result = response.data;
 
-            <div
-                className={`font-bold px-4 py-2 rounded-lg ${timeLeft !== null && timeLeft <= 60
-                    ? "bg-red-100 text-red-600"
-                    : "bg-blue-100 text-blue-600"}`}
-            >
-                Time Remaining: {" "}
-                {String(Math.floor((timeLeft ?? 0) / 60)).padStart(2, "0")}:
-                {String((timeLeft ?? 0) % 60).padStart(2, "0")}
+                setSubmissionResult({
+                    score: result.score,
+                    percentage: result.percentage,
+                });
+                submittedRef.current = true;
+                setSubmitted(true);
+            } catch (err) {
+                console.error(
+                    "SUBMIT ERROR:",
+                    err.response?.data || err.message
+                );
+
+                const message =
+                    err.response?.data?.message ||
+                    "Submission failed. Please try again.";
+
+                setSubmitError(
+                    automatic
+                        ? `Time is up. Your answers could not be submitted automatically. ${message}`
+                        : message
+                );
+
+                if (automatic) {
+                    autoSubmitTriggered.current = true;
+                }
+            } finally {
+                submittingRef.current = false;
+                setIsSubmitting(false);
+            }
+        },
+        [answers, id]
+    );
+
+    useEffect(() => {
+        if (
+            timeLeft === null ||
+            loading ||
+            submitted ||
+            isSubmitting
+        ) {
+            return;
+        }
+
+        if (timeLeft <= 0) {
+            if (!autoSubmitTriggered.current) {
+                autoSubmitTriggered.current = true;
+                handleSubmitAssessment(true);
+            }
+
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setTimeLeft((previous) =>
+                previous === null
+                    ? null
+                    : Math.max(0, previous - 1)
+            );
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [
+        timeLeft,
+        loading,
+        submitted,
+        isSubmitting,
+        handleSubmitAssessment,
+    ]);
+
+    const handleAnswerChange = (questionId, answer) => {
+        setAnswers((previous) => ({
+            ...previous,
+            [questionId]: answer,
+        }));
+    };
+
+    const formatTime = (seconds) => {
+        const safeSeconds = Math.max(0, seconds ?? 0);
+        const minutes = Math.floor(safeSeconds / 60);
+        const remainingSeconds = safeSeconds % 60;
+
+        return `${String(minutes).padStart(2, "0")}:${String(
+            remainingSeconds
+        ).padStart(2, "0")}`;
+    };
+
+    if (loading) {
+        return (
+            <div className="mx-auto w-full max-w-4xl">
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                    <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+                    <p className="mt-4 text-slate-600">
+                        Loading your assessment...
+                    </p>
+                </div>
             </div>
-        </div>
+        );
+    }
 
-        <div className="space-y-6">
+    if (error) {
+        return (
+            <div className="mx-auto w-full max-w-3xl rounded-2xl border border-red-200 bg-white p-6 sm:p-8">
+                <div className="text-3xl">⚠️</div>
 
-            {questions.length > 0 && (
-                <div className="bg-white shadow-lg rounded-xl p-8">
-                    <div className="flex justify-between items-center mb-6">
+                <h1 className="mt-3 text-xl font-bold text-slate-800">
+                    Unable to open assessment
+                </h1>
 
-                        <p className="text-gray-500 font-semibold">
-                            Question {currentQuestion + 1} of {questions.length}
-                        </p>
+                <p className="mt-2 text-sm text-red-600">{error}</p>
 
-                        <p className="text-gray-500">
-                            {Object.keys(answers).length} answered
-                        </p>
+                <button
+                    type="button"
+                    onClick={() => navigate("/student/assessments")}
+                    className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
+                >
+                    Back to Assessments
+                </button>
+            </div>
+        );
+    }
 
+    if (submitted) {
+        const hasScore =
+            submissionResult?.score !== undefined &&
+            submissionResult?.score !== null;
+
+        const hasPercentage =
+            submissionResult?.percentage !== undefined &&
+            submissionResult?.percentage !== null;
+
+        return (
+            <div className="mx-auto w-full max-w-2xl rounded-2xl border border-emerald-200 bg-white p-6 text-center shadow-sm sm:p-10">
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-3xl">
+                    ✓
+                </div>
+
+                <p className="mt-5 text-sm font-bold uppercase tracking-wider text-emerald-600">
+                    Submission successful
+                </p>
+
+                <h1 className="mt-2 text-2xl font-bold text-slate-800 sm:text-3xl">
+                    Assessment submitted!
+                </h1>
+
+                <p className="mt-3 text-sm leading-6 text-slate-600 sm:text-base">
+                    Your answers have been recorded. You can review your
+                    performance on the Results page.
+                </p>
+
+                {(hasScore || hasPercentage) && (
+                    <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        {hasScore && (
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                                <p className="text-sm text-slate-500">
+                                    Your score
+                                </p>
+                                <p className="mt-2 text-3xl font-bold text-slate-800">
+                                    {submissionResult.score}
+                                </p>
+                            </div>
+                        )}
+
+                        {hasPercentage && (
+                            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                                <p className="text-sm text-emerald-700">
+                                    Percentage
+                                </p>
+                                <p className="mt-2 text-3xl font-bold text-emerald-700">
+                                    {submissionResult.percentage}%
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <button
+                    type="button"
+                    onClick={() => navigate("/results")}
+                    className="mt-7 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
+                >
+                    View My Results
+                </button>
+            </div>
+        );
+    }
+
+    if (questions.length === 0) {
+        return (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                <div className="text-4xl">📭</div>
+
+                <h1 className="mt-4 text-xl font-bold text-slate-800">
+                    No questions available
+                </h1>
+
+                <p className="mt-2 text-slate-500">
+                    This assessment doesn't have any questions yet.
+                </p>
+
+                <button
+                    type="button"
+                    onClick={() => navigate("/student/assessments")}
+                    className="mt-5 w-full rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
+                >
+                    Back to Assessments
+                </button>
+            </div>
+        );
+    }
+
+    const question = questions[currentQuestion];
+    const answeredCount = Object.keys(answers).length;
+    const progress = ((currentQuestion + 1) / questions.length) * 100;
+    const isTimeLow = timeLeft !== null && timeLeft <= 60;
+
+    return (
+        <div className="mx-auto w-full min-w-0 max-w-5xl">
+            <div className="mb-5 sm:mb-7">
+                <p className="text-sm font-semibold text-blue-600">
+                    ASSESSMENT IN PROGRESS
+                </p>
+
+                <h1 className="mt-2 break-words text-2xl font-bold leading-tight text-slate-800 sm:text-3xl lg:text-4xl">
+                    {assessment.title}
+                </h1>
+                {assessment.description && (
+                    <p className="mt-3 break-words text-sm leading-6 text-slate-500 sm:text-base">
+                        {assessment.description}
+                    </p>
+                )}
+            </div>
+
+            <div className="mb-5 grid grid-cols-2 gap-3 sm:mb-6 sm:gap-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                    <p className="text-xs text-slate-500 sm:text-sm">
+                        Duration
+                    </p>
+
+                    <p className="mt-1 text-base font-bold text-slate-800 sm:text-lg">
+                        {assessment.duration} minutes
+                    </p>
+                </div>
+
+                <div
+                    className={`rounded-xl border p-3 shadow-sm sm:p-4 ${
+                        isTimeLow
+                            ? "border-red-200 bg-red-50"
+                            : "border-blue-100 bg-blue-50"
+                    }`}
+                >
+                    <p className="text-xs text-slate-500 sm:text-sm">
+                        Time remaining
+                    </p>
+
+                    <p
+                        className={`mt-1 text-xl font-bold tabular-nums sm:text-2xl ${
+                            isTimeLow ? "text-red-600" : "text-blue-700"
+                        }`}
+                        aria-live={isTimeLow ? "polite" : "off"}
+                    >
+                        ⏱️ {formatTime(timeLeft)}
+                    </p>
+                </div>
+            </div>
+
+            <div className="mb-5 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:mb-6 sm:p-5">
+                <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-700">
+                        Question {currentQuestion + 1} of {questions.length}
+                    </p>
+
+                    <p className="shrink-0 text-xs font-medium text-slate-500 sm:text-sm">
+                        {answeredCount} / {questions.length} answered
+                    </p>
+                </div>
+
+                <div
+                    className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
+                    role="progressbar"
+                    aria-valuenow={currentQuestion + 1}
+                    aria-valuemin={1}
+                    aria-valuemax={questions.length}
+                    aria-label="Question progress"
+                >
+                    <div
+                        className="h-full rounded-full bg-blue-600 transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
+            </div>
+
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="p-4 sm:p-7 md:p-8">
+                    <div className="mb-5 inline-flex rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 sm:text-sm">
+                        QUESTION {currentQuestion + 1}
                     </div>
 
-                    <div className="w-full bg-gray-200 rounded-full h-2 mb-8">
-
-                        <div
-                            className="bg-blue-600 h-2 rounded-full transition-all"
-                            style={{
-                                width: `${((currentQuestion + 1) / questions.length) * 100}%`,
-                            }} />
-
-                    </div>
-
-                    <h2 className="text-2xl font-bold mb-6">
-                        {currentQuestion + 1}.{" "}
-                        {questions[currentQuestion].questionText}
+                    <h2 className="break-words text-lg font-bold leading-7 text-slate-800 sm:text-2xl sm:leading-9">
+                        {question.questionText}
                     </h2>
 
-                    <div className="space-y-3">
+                    <p className="mt-2 text-sm text-slate-500">
+                        Select one answer.
+                    </p>
 
-                        {questions[currentQuestion].options.map((option) => (
+                    <div className="mt-6 space-y-3">
+                        {question.options.map((option, index) => {
+                            const selected =
+                                answers[question._id] === option;
 
-                            <label
-                                key={option}
-                                className={`flex items-center gap-3 border p-4 rounded-lg cursor-pointer transition ${answers[questions[currentQuestion]._id] === option
-                                        ? "border-blue-600 bg-blue-50"
-                                        : "hover:bg-gray-50"}`}
-                            >
+                            return (
+                                <label
+                                    key={`${question._id}-${index}`}
+                                    className={`flex min-w-0 items-start gap-3 rounded-xl border p-3 transition sm:gap-4 sm:p-4 ${
+                                        isSubmitting
+                                            ? "cursor-not-allowed opacity-70"
+                                            : "cursor-pointer"
+                                    } ${
+                                        selected
+                                            ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                                            : "border-slate-200 hover:border-blue-300 hover:bg-slate-50"
+                                    }`}
+                                >
+                                    <input
+                                        type="radio"
+                                        name={question._id}
+                                        value={option}
+                                        checked={selected}
+                                        disabled={isSubmitting}
+                                        onChange={() =>
+                                            handleAnswerChange(
+                                                question._id,
+                                                option
+                                            )
+                                        }
+                                        className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                                    />
 
-                                <input
-                                    type="radio"
-                                    name={questions[currentQuestion]._id}
-                                    value={option}
-                                    checked={answers[questions[currentQuestion]._id] === option}
-                                    onChange={() => handleAnswerChange(
-                                        questions[currentQuestion]._id,
-                                        option
-                                    )} />
+                                    <span
+                                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                                            selected
+                                                ? "bg-blue-600 text-white"
+                                                : "bg-slate-100 text-slate-600"
+                                        }`}
+                                    >
+                                        {String.fromCharCode(65 + index)}
+                                    </span>
 
-                                <span className="text-gray-800">
-                                    {option}
-                                </span>
-
-                            </label>
-
-                        ))}
-
+                                    <span className="min-w-0 flex-1 break-words text-sm leading-6 text-slate-700 sm:text-base">
+                                        {option}
+                                    </span>
+                                </label>
+                            );
+                        })}
                     </div>
 
-                    <div className="flex justify-between mt-8">
+                    {submitError && (
+                        <div
+                            className="mt-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+                            role="alert"
+                        >
+                            <p className="font-semibold">
+                                We couldn't submit your assessment.
+                            </p>
 
+                            <p className="mt-1">{submitError}</p>
+
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    handleSubmitAssessment(
+                                        timeLeft !== null && timeLeft <= 0
+                                    )
+                                }
+                                disabled={isSubmitting}
+                                className="mt-3 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {isSubmitting
+                                    ? "Submitting..."
+                                    : "Try Submission Again"}
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="mt-8 grid grid-cols-2 gap-3 border-t border-slate-100 pt-5 sm:flex sm:items-center sm:justify-between sm:gap-4">
                         <button
                             type="button"
-                            disabled={currentQuestion === 0}
-                            onClick={() => setCurrentQuestion(currentQuestion - 1)}
-                            className="px-5 py-3 bg-gray-300 rounded-lg disabled:opacity-50"
+                            disabled={currentQuestion === 0 || isSubmitting}
+                            onClick={() =>
+                                setCurrentQuestion(
+                                    (previous) => previous - 1
+                                )
+                            }
+                            className="flex min-h-12 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 sm:min-w-32 sm:px-5"
                         >
                             ← Previous
                         </button>
@@ -208,30 +514,38 @@ return (
                         {currentQuestion < questions.length - 1 ? (
                             <button
                                 type="button"
-                                onClick={() => setCurrentQuestion(currentQuestion + 1)}
-                                className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                disabled={isSubmitting}
+                                onClick={() =>
+                                    setCurrentQuestion(
+                                        (previous) => previous + 1
+                                    )
+                                }
+                                className="flex min-h-12 items-center justify-center gap-1 rounded-xl bg-blue-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-32 sm:px-5"
                             >
-                                Next →
+                                Next Question →
                             </button>
                         ) : (
                             <button
                                 type="button"
-                                onClick={handleSubmitAssessment}
-                                disabled={isSubmitting}
-                                className="px-5 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => handleSubmitAssessment(false)}
+                                disabled={isSubmitting || answeredCount === 0}
+                                className="col-span-2 flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto sm:min-w-44 sm:px-6"
                             >
-                                {isSubmitting ? "Submitting..." : "Submit Assessment"}
+                                {isSubmitting
+                                    ? "Submitting..."
+                                    : "✓ Submit Assessment"}
                             </button>
                         )}
-
                     </div>
 
+                    <p className="mt-4 text-center text-xs leading-5 text-slate-400">
+                        Your selected answers are saved as you move between
+                        questions.
+                    </p>
                 </div>
-
-            )}
+            </div>
         </div>
-
-    </div>
-);
+    );
 }
+
 export default TakeAssessment;
