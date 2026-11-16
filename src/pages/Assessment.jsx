@@ -17,6 +17,21 @@ const labelClass =
 const panelClass =
   "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 
+  const getUserRole = () => {
+    try {
+      const token = localStorage.getItem("token");
+
+      if (!token) return null;
+
+      const payload = JSON.parse(atob(token.split(".")[1]));
+
+      return payload.role;
+    } catch (error) {
+      return null;
+    }
+  };
+
+
 function Assessment() {
   const [assessments, setAssessments] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -29,6 +44,7 @@ function Assessment() {
   const [notification, setNotification] = useState(null);
   const [formError, setFormError] = useState("");
   const [formData, setFormData] = useState(emptyForm);
+  const isAdmin = getUserRole() === "admin";
 
   const navigate = useNavigate();
 
@@ -249,7 +265,8 @@ function Assessment() {
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         {heading}
 
-        <button
+        {isAdmin && (
+           <button
           type="button"
           onClick={openCreateModal}
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950 sm:w-auto"
@@ -258,7 +275,9 @@ function Assessment() {
             +
           </span>
           Create Assessment
-        </button>
+             </button>
+        )}
+    
       </div>
 
       {/* Assessment count */}
@@ -363,13 +382,45 @@ function Assessment() {
                     {assessment.duration} minutes
                   </span>
                 </div>
+                {!isAdmin && (
+                  <div className="mt-6 border-t border-slate-200 pt-4 dark:border-slate-800">
+                      <button
+                        onClick={() =>
+                          navigate(`/assessments/${assessment._id}/take`)
+                        }
+                        className="w-full rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                      >
+                        Start Assessment
+                      </button>
+                  </div>
+                )}
+                {isAdmin && (
+        <div className="flex gap-3 mt-4">
+          <button
+              onClick={() => handleEdit(assessment)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              Edit
+          </button>
+
+          <button
+              onClick={() => setDeletingAssessment(assessment)}
+              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
+            >
+              Delete
+            </button>
+        </div>
+      )}
               </div>
             </article>
           ))}
+          
         </div>
       )}
 
       {/* Create / edit modal */}
+
+
       {/* Create / edit modal */}
       {showModal && (
         <div
