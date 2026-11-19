@@ -38,6 +38,7 @@ Version Control Git, GitHub
 My Contribution
 I developed the frontend and backend, implemented the database models, connected the application through REST API endpoints, implemented authentication and role-based authorization, and deployed the application for public access.
 The project strengthened my practical understanding of full-stack development, API integration, database management, authentication, deployment and debugging.
+
 Live Application
 Frontend: https://assessment-frontend-batch-01.vercel.app/
 
