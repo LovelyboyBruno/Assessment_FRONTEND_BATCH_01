@@ -40,7 +40,11 @@ I developed the frontend and backend, implemented the database models, connected
 The project strengthened my practical understanding of full-stack development, API integration, database management, authentication, deployment and debugging.
 Live Application
 Frontend: https://assessment-frontend-batch-01.vercel.app/
+
 Backend API: https://assessment-api-batch-01-1.onrender.com/api
+
 API Documentation: https://assessment-api-batch-01-1.onrender.com/api-docs
+
 Source Code: https://github.com/LovelyboyBruno/Assessment_FRONTEND_BATCH_01
+
 Backend Repository: https://github.com/LovelyboyBruno/Assessment_API_BATCH_01
